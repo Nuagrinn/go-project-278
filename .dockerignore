@@ -1,0 +1,11 @@
+.git/
+.github/
+.idea/
+.cache/
+.gocache/
+.gomodcache/
+bin/*
+!bin/run.sh
+coverage.out
+.env
+.scannerwork/

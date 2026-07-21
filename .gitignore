@@ -1,0 +1,9 @@
+.cache/
+.gocache/
+.gomodcache/
+.idea/
+bin/*
+!bin/run.sh
+coverage.out
+.env
+.scannerwork/

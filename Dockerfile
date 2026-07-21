@@ -2,14 +2,10 @@
 FROM node:24-alpine AS frontend-builder
 WORKDIR /build/frontend
 
-COPY package*.json ./
+COPY package.json package-lock.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
-    if [ -f package-lock.json ]; then \
-        npm ci --prefer-offline --no-audit; \
-    else \
-        npm install --omit=dev --prefer-offline --no-audit; \
-    fi
+    npm ci --ignore-scripts --prefer-offline --no-audit
 
 # Build backend
 FROM golang:1.25-alpine AS backend-builder
@@ -31,7 +27,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
 FROM alpine:3.22
 
 RUN apk add --no-cache ca-certificates tzdata bash caddy libcap \
-    && (setcap -r "$(command -v caddy)" || true)
+    && (setcap -r "$(command -v caddy)" || true) \
+    && addgroup -S app \
+    && adduser -S -G app app
 
 WORKDIR /app
 
@@ -49,5 +47,9 @@ RUN chmod +x /app/bin/run.sh
 COPY Caddyfile /etc/caddy/Caddyfile
 
 EXPOSE 80
+
+RUN mkdir -p /var/lib/caddy /var/log/caddy /config/caddy /data/caddy \
+    && chown -R app:app /app /etc/caddy /var/lib/caddy /var/log/caddy /config /data
+USER app
 
 CMD ["/app/bin/run.sh"]

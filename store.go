@@ -18,6 +18,16 @@ type link struct {
 	CreatedAt   time.Time
 }
 
+type linkVisit struct {
+	ID        int64
+	LinkID    int64
+	CreatedAt time.Time
+	IP        string
+	UserAgent string
+	Referer   string
+	Status    int32
+}
+
 type createLinkParams struct {
 	OriginalURL string
 	ShortName   string
@@ -34,6 +44,19 @@ type listLinksParams struct {
 	Limit  int32
 }
 
+type createLinkVisitParams struct {
+	LinkID    int64
+	IP        string
+	UserAgent string
+	Referer   string
+	Status    int32
+}
+
+type listLinkVisitsParams struct {
+	Offset int32
+	Limit  int32
+}
+
 type linkStore interface {
 	ListLinks(ctx context.Context, params listLinksParams) ([]link, error)
 	CountLinks(ctx context.Context) (int64, error)
@@ -42,4 +65,7 @@ type linkStore interface {
 	CreateLink(ctx context.Context, params createLinkParams) (link, error)
 	UpdateLink(ctx context.Context, params updateLinkParams) (link, error)
 	DeleteLink(ctx context.Context, id int64) error
+	ListLinkVisits(ctx context.Context, params listLinkVisitsParams) ([]linkVisit, error)
+	CountLinkVisits(ctx context.Context) (int64, error)
+	CreateLinkVisit(ctx context.Context, params createLinkVisitParams) (linkVisit, error)
 }

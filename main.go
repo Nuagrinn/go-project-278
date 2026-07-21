@@ -39,6 +39,7 @@ func main() {
 
 func setupRouter(store linkStore, baseURL string) *gin.Engine {
 	router := gin.New()
+	router.TrustedPlatform = gin.PlatformCloudflare
 
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
@@ -52,7 +53,7 @@ func setupRouter(store linkStore, baseURL string) *gin.Engine {
 	})
 
 	links := newLinkHandler(store, baseURL)
-	router.GET("/r/:shortName", links.redirectLink)
+	router.GET("/r/:code", links.redirectLink)
 
 	api := router.Group("/api")
 	api.GET("/links", links.listLinks)
@@ -60,6 +61,7 @@ func setupRouter(store linkStore, baseURL string) *gin.Engine {
 	api.GET("/links/:id", links.getLink)
 	api.PUT("/links/:id", links.updateLink)
 	api.DELETE("/links/:id", links.deleteLink)
+	api.GET("/link_visits", links.listLinkVisits)
 
 	if os.Getenv("ENABLE_SENTRY_TEST_ENDPOINT") == "true" {
 		router.GET("/debug/sentry", captureTestError)
@@ -156,6 +158,7 @@ func corsMiddleware() gin.HandlerFunc {
 			"Authorization",
 			"Content-Type",
 			"Origin",
+			"Range",
 		},
 		ExposeHeaders: []string{
 			"Accept-Ranges",

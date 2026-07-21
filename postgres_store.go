@@ -100,6 +100,42 @@ func (s *postgresStore) DeleteLink(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (s *postgresStore) ListLinkVisits(ctx context.Context, params listLinkVisitsParams) ([]linkVisit, error) {
+	rows, err := s.queries.ListLinkVisits(ctx, db.ListLinkVisitsParams{
+		Limit:  params.Limit,
+		Offset: params.Offset,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	visits := make([]linkVisit, 0, len(rows))
+	for _, row := range rows {
+		visits = append(visits, toLinkVisit(row))
+	}
+
+	return visits, nil
+}
+
+func (s *postgresStore) CountLinkVisits(ctx context.Context) (int64, error) {
+	return s.queries.CountLinkVisits(ctx)
+}
+
+func (s *postgresStore) CreateLinkVisit(ctx context.Context, params createLinkVisitParams) (linkVisit, error) {
+	row, err := s.queries.CreateLinkVisit(ctx, db.CreateLinkVisitParams{
+		LinkID:    params.LinkID,
+		Ip:        params.IP,
+		UserAgent: params.UserAgent,
+		Referer:   params.Referer,
+		Status:    params.Status,
+	})
+	if err != nil {
+		return linkVisit{}, mapStoreError(err)
+	}
+
+	return toLinkVisit(row), nil
+}
+
 func (s *postgresStore) Close() error {
 	return s.db.Close()
 }
@@ -110,6 +146,18 @@ func toLink(row db.Link) link {
 		OriginalURL: row.OriginalUrl,
 		ShortName:   row.ShortName,
 		CreatedAt:   row.CreatedAt,
+	}
+}
+
+func toLinkVisit(row db.LinkVisit) linkVisit {
+	return linkVisit{
+		ID:        row.ID,
+		LinkID:    row.LinkID,
+		CreatedAt: row.CreatedAt,
+		IP:        row.Ip,
+		UserAgent: row.UserAgent,
+		Referer:   row.Referer,
+		Status:    row.Status,
 	}
 }
 

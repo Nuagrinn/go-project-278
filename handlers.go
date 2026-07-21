@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -37,6 +38,16 @@ type linkResponse struct {
 	ShortURL    string `json:"short_url"`
 }
 
+type linkVisitResponse struct {
+	ID        int64     `json:"id"`
+	LinkID    int64     `json:"link_id"`
+	CreatedAt time.Time `json:"created_at"`
+	IP        string    `json:"ip"`
+	UserAgent string    `json:"user_agent"`
+	Referer   string    `json:"referer"`
+	Status    int32     `json:"status"`
+}
+
 type errorResponse struct {
 	Error string `json:"error"`
 }
@@ -61,7 +72,7 @@ func (h *linkHandler) listLinks(context *gin.Context) {
 		return
 	}
 
-	requestedRange, err := parseListRange(context.Query("range"), total)
+	requestedRange, err := parseRequestListRange(context, total)
 	if err != nil {
 		writeError(context, http.StatusBadRequest, err.Error())
 
@@ -83,7 +94,41 @@ func (h *linkHandler) listLinks(context *gin.Context) {
 		response = append(response, h.toResponse(context, item))
 	}
 
-	writeRangeHeaders(context, requestedRange, total, len(response))
+	writeRangeHeaders(context, "links", requestedRange, total, len(response))
+	context.JSON(http.StatusOK, response)
+}
+
+func (h *linkHandler) listLinkVisits(context *gin.Context) {
+	total, err := h.store.CountLinkVisits(context.Request.Context())
+	if err != nil {
+		writeError(context, http.StatusInternalServerError, "could not count link visits")
+
+		return
+	}
+
+	requestedRange, err := parseRequestListRange(context, total)
+	if err != nil {
+		writeError(context, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	visits, err := h.store.ListLinkVisits(context.Request.Context(), listLinkVisitsParams{
+		Offset: int32(requestedRange.Start),
+		Limit:  int32(requestedRange.End - requestedRange.Start + 1),
+	})
+	if err != nil {
+		writeError(context, http.StatusInternalServerError, "could not load link visits")
+
+		return
+	}
+
+	response := make([]linkVisitResponse, 0, len(visits))
+	for _, item := range visits {
+		response = append(response, toVisitResponse(item))
+	}
+
+	writeRangeHeaders(context, "link_visits", requestedRange, total, len(response))
 	context.JSON(http.StatusOK, response)
 }
 
@@ -177,7 +222,10 @@ func (h *linkHandler) deleteLink(context *gin.Context) {
 }
 
 func (h *linkHandler) redirectLink(context *gin.Context) {
-	shortName := context.Param("shortName")
+	shortName := context.Param("code")
+	if shortName == "" {
+		shortName = context.Param("shortName")
+	}
 	if !isValidShortName(shortName) {
 		writeError(context, http.StatusNotFound, "link not found")
 
@@ -187,6 +235,19 @@ func (h *linkHandler) redirectLink(context *gin.Context) {
 	item, err := h.store.GetLinkByShortName(context.Request.Context(), shortName)
 	if err != nil {
 		h.handleStoreError(context, err)
+
+		return
+	}
+
+	status := int32(http.StatusFound)
+	if _, err := h.store.CreateLinkVisit(context.Request.Context(), createLinkVisitParams{
+		LinkID:    item.ID,
+		IP:        context.ClientIP(),
+		UserAgent: context.Request.UserAgent(),
+		Referer:   context.Request.Referer(),
+		Status:    status,
+	}); err != nil {
+		writeError(context, http.StatusInternalServerError, "could not record link visit")
 
 		return
 	}
@@ -234,6 +295,10 @@ func (h *linkHandler) toResponse(context *gin.Context, item link) linkResponse {
 		ShortName:   item.ShortName,
 		ShortURL:    h.shortURL(context, item.ShortName),
 	}
+}
+
+func toVisitResponse(item linkVisit) linkVisitResponse {
+	return linkVisitResponse(item)
 }
 
 func (h *linkHandler) shortURL(context *gin.Context, shortName string) string {
@@ -295,6 +360,15 @@ func parseID(context *gin.Context) (int64, bool) {
 	return id, err == nil && id > 0
 }
 
+func parseRequestListRange(context *gin.Context, total int64) (listRange, error) {
+	rawRange := context.Query("range")
+	if rawRange == "" {
+		rawRange = context.GetHeader("Range")
+	}
+
+	return parseListRange(rawRange, total)
+}
+
 func parseListRange(rawRange string, total int64) (listRange, error) {
 	if rawRange == "" {
 		if total == 0 {
@@ -323,18 +397,18 @@ func parseListRange(rawRange string, total int64) (listRange, error) {
 	return listRange{Start: values[0], End: values[1]}, nil
 }
 
-func writeRangeHeaders(context *gin.Context, requestedRange listRange, total int64, itemsCount int) {
-	context.Header("Accept-Ranges", "links")
+func writeRangeHeaders(context *gin.Context, unit string, requestedRange listRange, total int64, itemsCount int) {
+	context.Header("Accept-Ranges", unit)
 	context.Header("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges")
 
 	if total == 0 || itemsCount == 0 {
-		context.Header("Content-Range", fmt.Sprintf("links */%d", total))
+		context.Header("Content-Range", fmt.Sprintf("%s */%d", unit, total))
 
 		return
 	}
 
 	actualEnd := requestedRange.Start + int64(itemsCount) - 1
-	context.Header("Content-Range", fmt.Sprintf("links %d-%d/%d", requestedRange.Start, actualEnd, total))
+	context.Header("Content-Range", fmt.Sprintf("%s %d-%d/%d", unit, requestedRange.Start, actualEnd, total))
 }
 
 func requestBaseURL(context *gin.Context) string {

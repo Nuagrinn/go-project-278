@@ -257,6 +257,79 @@ func TestRedirectLink(t *testing.T) {
 	}
 }
 
+func TestRedirectLinkRecordsVisit(t *testing.T) {
+	router := newTestRouter()
+	createTestLink(t, router, `{"original_url":"https://example.com/long-url","short_name":"exmpl"}`)
+
+	response := performRequestWithHeaders(router, http.MethodGet, "/r/exmpl", "", map[string]string{
+		"CF-Connecting-IP": "203.0.113.10",
+		"Referer":          "https://example.org/source",
+		"User-Agent":       "curl/8.5.0",
+	})
+	if response.Code != http.StatusFound {
+		t.Fatalf("expected status %d, got %d", http.StatusFound, response.Code)
+	}
+
+	response = performRequest(router, http.MethodGet, "/api/link_visits", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var visits []linkVisitResponse
+	decodeResponse(t, response, &visits)
+
+	if len(visits) != 1 {
+		t.Fatalf("expected 1 link visit, got %d", len(visits))
+	}
+
+	expected := linkVisitResponse{
+		ID:        1,
+		LinkID:    1,
+		CreatedAt: visits[0].CreatedAt,
+		IP:        "203.0.113.10",
+		UserAgent: "curl/8.5.0",
+		Referer:   "https://example.org/source",
+		Status:    http.StatusFound,
+	}
+	if visits[0] != expected {
+		t.Fatalf("expected visit %+v, got %+v", expected, visits[0])
+	}
+
+	assertHeader(t, response, "Accept-Ranges", "link_visits")
+	assertHeader(t, response, "Content-Range", "link_visits 0-0/1")
+}
+
+func TestListLinkVisitsWithPagination(t *testing.T) {
+	router := newTestRouter()
+	createTestLink(t, router, `{"original_url":"https://example.com/long-url","short_name":"exmpl"}`)
+
+	for range 12 {
+		response := performRequest(router, http.MethodGet, "/r/exmpl", "")
+		if response.Code != http.StatusFound {
+			t.Fatalf("expected status %d, got %d", http.StatusFound, response.Code)
+		}
+	}
+
+	response := performRequestWithHeaders(router, http.MethodGet, "/api/link_visits", "", map[string]string{
+		"Range": "[5, 9]",
+	})
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var visits []linkVisitResponse
+	decodeResponse(t, response, &visits)
+
+	if len(visits) != 5 {
+		t.Fatalf("expected 5 link visits, got %d", len(visits))
+	}
+
+	assertHeader(t, response, "Accept-Ranges", "link_visits")
+	assertHeader(t, response, "Content-Range", "link_visits 5-9/12")
+	assertVisitID(t, visits[0], 6)
+	assertVisitID(t, visits[4], 10)
+}
+
 func TestLinkNotFound(t *testing.T) {
 	router := newTestRouter()
 
@@ -331,6 +404,16 @@ func createSeedLinks(t *testing.T, router http.Handler, count int) {
 }
 
 func performRequest(router http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	return performRequestWithHeaders(router, method, path, body, nil)
+}
+
+func performRequestWithHeaders(
+	router http.Handler,
+	method string,
+	path string,
+	body string,
+	headers map[string]string,
+) *httptest.ResponseRecorder {
 	requestBody := strings.NewReader(body)
 	if body != "" {
 		requestBody = strings.NewReader(body)
@@ -339,6 +422,9 @@ func performRequest(router http.Handler, method, path, body string) *httptest.Re
 	request := httptest.NewRequest(method, path, requestBody)
 	if body != "" {
 		request.Header.Set("Content-Type", "application/json")
+	}
+	for name, value := range headers {
+		request.Header.Set(name, value)
 	}
 
 	response := httptest.NewRecorder()
@@ -368,6 +454,14 @@ func assertLinkID(t *testing.T, actual linkResponse, expectedID int64) {
 
 	if actual.ID != expectedID {
 		t.Fatalf("expected link ID %d, got %d", expectedID, actual.ID)
+	}
+}
+
+func assertVisitID(t *testing.T, actual linkVisitResponse, expectedID int64) {
+	t.Helper()
+
+	if actual.ID != expectedID {
+		t.Fatalf("expected link visit ID %d, got %d", expectedID, actual.ID)
 	}
 }
 

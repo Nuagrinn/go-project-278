@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,7 +15,10 @@ import (
 var (
 	errInvalidOriginalURL = errors.New("original_url must be a valid http or https url")
 	errInvalidShortName   = errors.New("short_name must be 3-64 characters and contain only letters, numbers, '_' or '-'")
+	errInvalidRange       = errors.New("range must be an array with two non-negative numbers, for example [0,9]")
 )
+
+const maxRangeLimit = int64(1<<31 - 1)
 
 type linkHandler struct {
 	store   linkStore
@@ -36,6 +41,11 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+type listRange struct {
+	Start int64
+	End   int64
+}
+
 func newLinkHandler(store linkStore, baseURL string) *linkHandler {
 	return &linkHandler{
 		store:   store,
@@ -44,7 +54,24 @@ func newLinkHandler(store linkStore, baseURL string) *linkHandler {
 }
 
 func (h *linkHandler) listLinks(context *gin.Context) {
-	links, err := h.store.ListLinks(context.Request.Context())
+	total, err := h.store.CountLinks(context.Request.Context())
+	if err != nil {
+		writeError(context, http.StatusInternalServerError, "could not count links")
+
+		return
+	}
+
+	requestedRange, err := parseListRange(context.Query("range"), total)
+	if err != nil {
+		writeError(context, http.StatusBadRequest, err.Error())
+
+		return
+	}
+
+	links, err := h.store.ListLinks(context.Request.Context(), listLinksParams{
+		Offset: int32(requestedRange.Start),
+		Limit:  int32(requestedRange.End - requestedRange.Start + 1),
+	})
 	if err != nil {
 		writeError(context, http.StatusInternalServerError, "could not load links")
 
@@ -56,6 +83,7 @@ func (h *linkHandler) listLinks(context *gin.Context) {
 		response = append(response, h.toResponse(context, item))
 	}
 
+	writeRangeHeaders(context, requestedRange, total, len(response))
 	context.JSON(http.StatusOK, response)
 }
 
@@ -265,6 +293,48 @@ func parseID(context *gin.Context) (int64, bool) {
 	id, err := strconv.ParseInt(context.Param("id"), 10, 64)
 
 	return id, err == nil && id > 0
+}
+
+func parseListRange(rawRange string, total int64) (listRange, error) {
+	if rawRange == "" {
+		if total == 0 {
+			return listRange{Start: 0, End: 0}, nil
+		}
+
+		end := min(total-1, maxRangeLimit-1)
+
+		return listRange{Start: 0, End: end}, nil
+	}
+
+	var values []int64
+	if err := json.Unmarshal([]byte(rawRange), &values); err != nil {
+		return listRange{}, errInvalidRange
+	}
+
+	if len(values) != 2 || values[0] < 0 || values[1] < values[0] {
+		return listRange{}, errInvalidRange
+	}
+
+	rangeLimit := values[1] - values[0] + 1
+	if values[0] > maxRangeLimit || rangeLimit > maxRangeLimit {
+		return listRange{}, errInvalidRange
+	}
+
+	return listRange{Start: values[0], End: values[1]}, nil
+}
+
+func writeRangeHeaders(context *gin.Context, requestedRange listRange, total int64, itemsCount int) {
+	context.Header("Accept-Ranges", "links")
+	context.Header("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges")
+
+	if total == 0 || itemsCount == 0 {
+		context.Header("Content-Range", fmt.Sprintf("links */%d", total))
+
+		return
+	}
+
+	actualEnd := requestedRange.Start + int64(itemsCount) - 1
+	context.Header("Content-Range", fmt.Sprintf("links %d-%d/%d", requestedRange.Start, actualEnd, total))
 }
 
 func requestBaseURL(context *gin.Context) string {

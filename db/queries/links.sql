@@ -1,7 +1,12 @@
 -- name: ListLinks :many
 SELECT id, original_url, short_name, created_at
 FROM links
-ORDER BY id;
+ORDER BY id
+LIMIT $1 OFFSET $2;
+
+-- name: CountLinks :one
+SELECT COUNT(*)::bigint
+FROM links;
 
 -- name: GetLink :one
 SELECT id, original_url, short_name, created_at

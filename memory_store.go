@@ -22,7 +22,7 @@ func newMemoryStore() *memoryStore {
 	}
 }
 
-func (s *memoryStore) ListLinks(_ context.Context) ([]link, error) {
+func (s *memoryStore) ListLinks(_ context.Context, params listLinksParams) ([]link, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -35,7 +35,17 @@ func (s *memoryStore) ListLinks(_ context.Context) ([]link, error) {
 		return links[i].ID < links[j].ID
 	})
 
-	return links, nil
+	start := min(int(params.Offset), len(links))
+	end := min(start+int(params.Limit), len(links))
+
+	return links[start:end], nil
+}
+
+func (s *memoryStore) CountLinks(_ context.Context) (int64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return int64(len(s.links)), nil
 }
 
 func (s *memoryStore) GetLink(_ context.Context, id int64) (link, error) {

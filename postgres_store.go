@@ -23,8 +23,11 @@ func newPostgresStore(database *sql.DB) *postgresStore {
 	}
 }
 
-func (s *postgresStore) ListLinks(ctx context.Context) ([]link, error) {
-	rows, err := s.queries.ListLinks(ctx)
+func (s *postgresStore) ListLinks(ctx context.Context, params listLinksParams) ([]link, error) {
+	rows, err := s.queries.ListLinks(ctx, db.ListLinksParams{
+		Limit:  params.Limit,
+		Offset: params.Offset,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -35,6 +38,10 @@ func (s *postgresStore) ListLinks(ctx context.Context) ([]link, error) {
 	}
 
 	return links, nil
+}
+
+func (s *postgresStore) CountLinks(ctx context.Context) (int64, error) {
+	return s.queries.CountLinks(ctx)
 }
 
 func (s *postgresStore) GetLink(ctx context.Context, id int64) (link, error) {

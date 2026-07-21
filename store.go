@@ -29,8 +29,14 @@ type updateLinkParams struct {
 	ShortName   string
 }
 
+type listLinksParams struct {
+	Offset int32
+	Limit  int32
+}
+
 type linkStore interface {
-	ListLinks(ctx context.Context) ([]link, error)
+	ListLinks(ctx context.Context, params listLinksParams) ([]link, error)
+	CountLinks(ctx context.Context) (int64, error)
 	GetLink(ctx context.Context, id int64) (link, error)
 	GetLinkByShortName(ctx context.Context, shortName string) (link, error)
 	CreateLink(ctx context.Context, params createLinkParams) (link, error)

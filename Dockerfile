@@ -26,7 +26,8 @@ RUN cp -R node_modules/@hexlet/project-url-shortener-frontend/dist ./dist
 
 # Runtime
 FROM caddy:2-alpine
-RUN apk add --no-cache bash ca-certificates
+RUN apk add --no-cache bash ca-certificates libcap \
+    && (setcap -r /usr/bin/caddy || true)
 
 WORKDIR /app
 

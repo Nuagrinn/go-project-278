@@ -5,18 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 var (
-	errInvalidOriginalURL = errors.New("original_url must be a valid http or https url")
-	errInvalidShortName   = errors.New("short_name must be 3-64 characters and contain only letters, numbers, '_' or '-'")
-	errInvalidRange       = errors.New("range must be an array with two non-negative numbers, for example [0,9]")
+	errInvalidRange = errors.New("range must be an array with two non-negative numbers, for example [0,9]")
 )
 
 const maxRangeLimit = int64(1<<31 - 1)
@@ -27,8 +25,8 @@ type linkHandler struct {
 }
 
 type linkRequest struct {
-	OriginalURL string `json:"original_url"`
-	ShortName   string `json:"short_name"`
+	OriginalURL string `json:"original_url" binding:"required,url"`
+	ShortName   string `json:"short_name" binding:"omitempty,min=3,max=32,shortname"`
 }
 
 type linkResponse struct {
@@ -50,6 +48,10 @@ type linkVisitResponse struct {
 
 type errorResponse struct {
 	Error string `json:"error"`
+}
+
+type validationErrorResponse struct {
+	Errors map[string]string `json:"errors"`
 }
 
 type listRange struct {
@@ -135,7 +137,7 @@ func (h *linkHandler) listLinkVisits(context *gin.Context) {
 func (h *linkHandler) createLink(context *gin.Context) {
 	var request linkRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
-		writeError(context, http.StatusBadRequest, "request body must be valid json")
+		writeBindingError(context, err)
 
 		return
 	}
@@ -178,23 +180,12 @@ func (h *linkHandler) updateLink(context *gin.Context) {
 
 	var request linkRequest
 	if err := context.ShouldBindJSON(&request); err != nil {
-		writeError(context, http.StatusBadRequest, "request body must be valid json")
+		writeBindingError(context, err)
 
 		return
 	}
 
-	originalURL, shortName, err := validateLinkRequest(request, true)
-	if err != nil {
-		h.handleStoreError(context, err)
-
-		return
-	}
-
-	item, err := h.store.UpdateLink(context.Request.Context(), updateLinkParams{
-		ID:          id,
-		OriginalURL: originalURL,
-		ShortName:   shortName,
-	})
+	item, err := h.updateValidatedLink(context, id, request)
 	if err != nil {
 		h.handleStoreError(context, err)
 
@@ -256,10 +247,8 @@ func (h *linkHandler) redirectLink(context *gin.Context) {
 }
 
 func (h *linkHandler) createValidatedLink(context *gin.Context, request linkRequest) (link, error) {
-	originalURL, shortName, err := validateLinkRequest(request, false)
-	if err != nil {
-		return link{}, err
-	}
+	originalURL := strings.TrimSpace(request.OriginalURL)
+	shortName := strings.TrimSpace(request.ShortName)
 
 	if shortName != "" {
 		return h.store.CreateLink(context.Request.Context(), createLinkParams{
@@ -275,6 +264,39 @@ func (h *linkHandler) createValidatedLink(context *gin.Context, request linkRequ
 		}
 
 		item, err := h.store.CreateLink(context.Request.Context(), createLinkParams{
+			OriginalURL: originalURL,
+			ShortName:   generated,
+		})
+		if errors.Is(err, errDuplicateShortName) {
+			continue
+		}
+
+		return item, err
+	}
+
+	return link{}, errDuplicateShortName
+}
+
+func (h *linkHandler) updateValidatedLink(context *gin.Context, id int64, request linkRequest) (link, error) {
+	originalURL := strings.TrimSpace(request.OriginalURL)
+	shortName := strings.TrimSpace(request.ShortName)
+
+	if shortName != "" {
+		return h.store.UpdateLink(context.Request.Context(), updateLinkParams{
+			ID:          id,
+			OriginalURL: originalURL,
+			ShortName:   shortName,
+		})
+	}
+
+	for range maxGenerateAttempts {
+		generated, err := generateShortName(defaultShortNameLength)
+		if err != nil {
+			return link{}, err
+		}
+
+		item, err := h.store.UpdateLink(context.Request.Context(), updateLinkParams{
+			ID:          id,
 			OriginalURL: originalURL,
 			ShortName:   generated,
 		})
@@ -315,43 +337,10 @@ func (h *linkHandler) handleStoreError(context *gin.Context, err error) {
 	case errors.Is(err, errLinkNotFound):
 		writeError(context, http.StatusNotFound, "link not found")
 	case errors.Is(err, errDuplicateShortName):
-		writeError(context, http.StatusConflict, "short_name already exists")
-	case errors.Is(err, errInvalidOriginalURL), errors.Is(err, errInvalidShortName):
-		writeError(context, http.StatusUnprocessableEntity, err.Error())
+		writeValidationErrors(context, map[string]string{"short_name": "short name already in use"})
 	default:
 		writeError(context, http.StatusInternalServerError, "internal server error")
 	}
-}
-
-func validateLinkRequest(request linkRequest, requireShortName bool) (string, string, error) {
-	originalURL := strings.TrimSpace(request.OriginalURL)
-	if !isValidOriginalURL(originalURL) {
-		return "", "", errInvalidOriginalURL
-	}
-
-	shortName := strings.TrimSpace(request.ShortName)
-	if shortName == "" {
-		if requireShortName {
-			return "", "", errInvalidShortName
-		}
-
-		return originalURL, "", nil
-	}
-
-	if !isValidShortName(shortName) {
-		return "", "", errInvalidShortName
-	}
-
-	return originalURL, shortName, nil
-}
-
-func isValidOriginalURL(value string) bool {
-	parsedURL, err := url.Parse(value)
-	if err != nil {
-		return false
-	}
-
-	return parsedURL.Host != "" && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https")
 }
 
 func parseID(context *gin.Context) (int64, bool) {
@@ -426,4 +415,24 @@ func requestBaseURL(context *gin.Context) string {
 
 func writeError(context *gin.Context, status int, message string) {
 	context.JSON(status, errorResponse{Error: message})
+}
+
+func writeBindingError(context *gin.Context, err error) {
+	var validationErrors validator.ValidationErrors
+	if errors.As(err, &validationErrors) {
+		messages := make(map[string]string, len(validationErrors))
+		for _, fieldError := range validationErrors {
+			messages[fieldError.Field()] = fieldError.Error()
+		}
+
+		writeValidationErrors(context, messages)
+
+		return
+	}
+
+	writeError(context, http.StatusBadRequest, "invalid request")
+}
+
+func writeValidationErrors(context *gin.Context, messages map[string]string) {
+	context.JSON(http.StatusUnprocessableEntity, validationErrorResponse{Errors: messages})
 }

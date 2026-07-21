@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 	"github.com/joho/godotenv"
 )
 
@@ -38,6 +41,8 @@ func main() {
 }
 
 func setupRouter(store linkStore, baseURL string) *gin.Engine {
+	registerValidators()
+
 	router := gin.New()
 	router.TrustedPlatform = gin.PlatformCloudflare
 
@@ -68,6 +73,31 @@ func setupRouter(store linkStore, baseURL string) *gin.Engine {
 	}
 
 	return router
+}
+
+func registerValidators() {
+	if validatorEngine, ok := binding.Validator.Engine().(*validator.Validate); ok {
+		validatorEngine.RegisterTagNameFunc(jsonFieldName)
+		if err := validatorEngine.RegisterValidation("shortname", validateShortNameField); err != nil {
+			log.Printf("could not register shortname validator: %v", err)
+		}
+	}
+}
+
+func jsonFieldName(field reflect.StructField) string {
+	name := strings.SplitN(field.Tag.Get("json"), ",", 2)[0]
+	if name == "-" {
+		return ""
+	}
+	if name == "" {
+		return field.Name
+	}
+
+	return name
+}
+
+func validateShortNameField(field validator.FieldLevel) bool {
+	return isValidShortName(field.Field().String())
 }
 
 func openStore() (linkStore, func(), error) {

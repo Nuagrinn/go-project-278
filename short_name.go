@@ -13,7 +13,7 @@ const (
 
 var (
 	shortNameAlphabet = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-	shortNamePattern  = regexp.MustCompile(`^[A-Za-z0-9_-]{3,64}$`)
+	shortNamePattern  = regexp.MustCompile(`^[A-Za-z0-9_-]{3,32}$`)
 )
 
 func generateShortName(length int) (string, error) {

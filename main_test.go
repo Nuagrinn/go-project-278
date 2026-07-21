@@ -228,6 +228,29 @@ func TestUpdateLink(t *testing.T) {
 	})
 }
 
+func TestUpdateLinkGeneratesShortName(t *testing.T) {
+	router := newTestRouter()
+	createTestLink(t, router, `{"original_url":"https://example.com/old","short_name":"old"}`)
+
+	response := performRequest(router, http.MethodPut, "/api/links/1", `{"original_url":"https://example.com/new"}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, response.Code)
+	}
+
+	var link linkResponse
+	decodeResponse(t, response, &link)
+
+	if link.ID != 1 {
+		t.Fatalf("expected link ID 1, got %d", link.ID)
+	}
+	if link.OriginalURL != "https://example.com/new" {
+		t.Fatalf("expected updated original_url, got %q", link.OriginalURL)
+	}
+	if len(link.ShortName) != defaultShortNameLength {
+		t.Fatalf("expected generated short_name length %d, got %d", defaultShortNameLength, len(link.ShortName))
+	}
+}
+
 func TestDeleteLink(t *testing.T) {
 	router := newTestRouter()
 	createTestLink(t, router, `{"original_url":"https://example.com/long-url","short_name":"exmpl"}`)
@@ -356,9 +379,11 @@ func TestCreateLinkRejectsDuplicateShortName(t *testing.T) {
 	createTestLink(t, router, body)
 
 	response := performRequest(router, http.MethodPost, "/api/links", body)
-	if response.Code != http.StatusConflict {
-		t.Fatalf("expected status %d, got %d", http.StatusConflict, response.Code)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected status %d, got %d", http.StatusUnprocessableEntity, response.Code)
 	}
+
+	assertValidationError(t, response, "short_name", "short name already in use")
 }
 
 func TestCreateLinkRejectsInvalidURL(t *testing.T) {
@@ -367,6 +392,40 @@ func TestCreateLinkRejectsInvalidURL(t *testing.T) {
 	response := performRequest(router, http.MethodPost, "/api/links", `{"original_url":"not-a-url","short_name":"exmpl"}`)
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected status %d, got %d", http.StatusUnprocessableEntity, response.Code)
+	}
+
+	assertValidationErrorContains(t, response, "original_url", "failed on the 'url' tag")
+}
+
+func TestCreateLinkRejectsInvalidShortName(t *testing.T) {
+	router := newTestRouter()
+
+	for _, body := range []string{
+		`{"original_url":"https://example.com","short_name":"xy"}`,
+		`{"original_url":"https://example.com","short_name":"abcdefghijklmnopqrstuvwxyzabcdefg"}`,
+		`{"original_url":"https://example.com","short_name":"not valid"}`,
+	} {
+		response := performRequest(router, http.MethodPost, "/api/links", body)
+		if response.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected status %d, got %d", http.StatusUnprocessableEntity, response.Code)
+		}
+
+		assertValidationErrorContains(t, response, "short_name", "Field validation")
+	}
+}
+
+func TestCreateLinkRejectsInvalidJSON(t *testing.T) {
+	router := newTestRouter()
+
+	response := performRequest(router, http.MethodPost, "/api/links", `{"original_url":`)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, response.Code)
+	}
+
+	var body errorResponse
+	decodeResponse(t, response, &body)
+	if body.Error != "invalid request" {
+		t.Fatalf("expected error %q, got %q", "invalid request", body.Error)
 	}
 }
 
@@ -462,6 +521,28 @@ func assertVisitID(t *testing.T, actual linkVisitResponse, expectedID int64) {
 
 	if actual.ID != expectedID {
 		t.Fatalf("expected link visit ID %d, got %d", expectedID, actual.ID)
+	}
+}
+
+func assertValidationError(t *testing.T, response *httptest.ResponseRecorder, field, expected string) {
+	t.Helper()
+
+	var body validationErrorResponse
+	decodeResponse(t, response, &body)
+
+	if actual := body.Errors[field]; actual != expected {
+		t.Fatalf("expected validation error for %s %q, got %q", field, expected, actual)
+	}
+}
+
+func assertValidationErrorContains(t *testing.T, response *httptest.ResponseRecorder, field, expected string) {
+	t.Helper()
+
+	var body validationErrorResponse
+	decodeResponse(t, response, &body)
+
+	if actual := body.Errors[field]; !strings.Contains(actual, expected) {
+		t.Fatalf("expected validation error for %s to contain %q, got %q", field, expected, actual)
 	}
 }
 

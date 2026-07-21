@@ -1,6 +1,11 @@
 ### Hexlet tests and linter status:
 [![Actions Status](https://github.com/Nuagrinn/go-project-278/actions/workflows/hexlet-check.yml/badge.svg)](https://github.com/Nuagrinn/go-project-278/actions)
 [![CI](https://github.com/Nuagrinn/go-project-278/actions/workflows/ci.yml/badge.svg)](https://github.com/Nuagrinn/go-project-278/actions/workflows/ci.yml)
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=Nuagrinn_go-project-278&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=Nuagrinn_go-project-278)
+
+## CI
+
+SonarQube Cloud analysis requires the `SONAR_TOKEN` GitHub Actions secret.
 
 ## Deployment
 

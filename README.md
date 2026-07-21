@@ -4,12 +4,12 @@
 
 ## Deployment
 
-Render URL: add after deployment.
+Render URL: https://go-project-278-1-5mvk.onrender.com
 
 The application is prepared for Docker deployment on Render. Configure these environment variables in the Render dashboard:
 
 ```bash
-PORT=8080
+PORT=80
 BASE_URL=<public service url>
 DATABASE_URL=<postgres connection string>
 SENTRY_DSN=<sentry project dsn>

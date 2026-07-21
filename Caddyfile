@@ -2,26 +2,16 @@
 	admin off
 }
 
-:{$PORT:8080} {
+:{$PORT:80} {
 	root * /app/public
-	encode gzip zstd
 
-	handle /api/* {
-		reverse_proxy 127.0.0.1:{$BACKEND_PORT:8081}
+	handle /assets/* {
+		file_server
 	}
 
-	handle /r/* {
-		reverse_proxy 127.0.0.1:{$BACKEND_PORT:8081}
+	handle / {
+		file_server
 	}
 
-	handle /ping {
-		reverse_proxy 127.0.0.1:{$BACKEND_PORT:8081}
-	}
-
-	handle /debug/* {
-		reverse_proxy 127.0.0.1:{$BACKEND_PORT:8081}
-	}
-
-	try_files {path} /index.html
-	file_server
+	reverse_proxy 127.0.0.1:{$BACKEND_PORT:8080}
 }

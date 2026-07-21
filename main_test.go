@@ -27,6 +27,26 @@ func TestPing(t *testing.T) {
 	}
 }
 
+func TestCORSPreflight(t *testing.T) {
+	t.Setenv("CORS_ALLOWED_ORIGINS", "")
+
+	router := newTestRouter()
+
+	request := httptest.NewRequest(http.MethodOptions, "/api/links", nil)
+	request.Header.Set("Origin", "http://localhost:5173")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	request.Header.Set("Access-Control-Request-Headers", "Content-Type")
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+
+	assertHeader(t, response, "Access-Control-Allow-Origin", "http://localhost:5173")
+}
+
 func TestCreateLink(t *testing.T) {
 	router := newTestRouter()
 

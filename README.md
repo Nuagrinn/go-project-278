@@ -16,3 +16,21 @@ SENTRY_DSN=<sentry project dsn>
 ```
 
 To send a test error to Sentry, temporarily set `ENABLE_SENTRY_TEST_ENDPOINT=true`, deploy the service, and open `/debug/sentry`. Disable the variable after confirming the event in Sentry.
+
+## UI
+
+Run the API and frontend together locally:
+
+```bash
+npm run dev
+```
+
+The frontend is available at `http://localhost:5173/`. The API runs on `http://localhost:8080/`.
+
+For local browser requests from the frontend, the API allows this origin by default:
+
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:5173
+```
+
+In Docker/Render, Caddy serves the frontend and proxies API requests to the Go app.

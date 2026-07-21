@@ -1,0 +1,13 @@
+{
+  "scripts": {
+    "dev": "concurrently -n api,ui -c blue,green \"go run .\" \"npm run frontend\"",
+    "frontend": "npx start-hexlet-url-shortener-frontend",
+    "frontend:direct": "start-hexlet-url-shortener-frontend"
+  },
+  "dependencies": {
+    "@hexlet/project-url-shortener-frontend": "^1.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

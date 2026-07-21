@@ -1,0 +1,23 @@
+:{$PORT:8080} {
+	root * /app/public
+	encode gzip zstd
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:{$BACKEND_PORT:8081}
+	}
+
+	handle /r/* {
+		reverse_proxy 127.0.0.1:{$BACKEND_PORT:8081}
+	}
+
+	handle /ping {
+		reverse_proxy 127.0.0.1:{$BACKEND_PORT:8081}
+	}
+
+	handle /debug/* {
+		reverse_proxy 127.0.0.1:{$BACKEND_PORT:8081}
+	}
+
+	try_files {path} /index.html
+	file_server
+}

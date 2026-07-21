@@ -7,3 +7,6 @@ bin/*
 coverage.out
 .env
 .scannerwork/
+.npm-cache/
+node_modules/
+dist/

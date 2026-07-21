@@ -12,6 +12,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
@@ -40,6 +41,7 @@ func setupRouter(store linkStore, baseURL string) *gin.Engine {
 
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
+	router.Use(corsMiddleware())
 	if sentry.CurrentHub().Client() != nil {
 		router.Use(sentryMiddleware())
 	}
@@ -118,7 +120,10 @@ func initSentry() func() {
 }
 
 func serverAddress() string {
-	port := os.Getenv("PORT")
+	port := os.Getenv("BACKEND_PORT")
+	if port == "" {
+		port = os.Getenv("PORT")
+	}
 	if port == "" {
 		port = "8080"
 	}
@@ -128,6 +133,54 @@ func serverAddress() string {
 
 func appBaseURL() string {
 	return strings.TrimRight(os.Getenv("BASE_URL"), "/")
+}
+
+func corsMiddleware() gin.HandlerFunc {
+	config := cors.Config{
+		AllowOrigins: corsAllowedOrigins(),
+		AllowMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodDelete,
+			http.MethodOptions,
+		},
+		AllowHeaders: []string{
+			"Accept",
+			"Authorization",
+			"Content-Type",
+			"Origin",
+		},
+		ExposeHeaders: []string{
+			"Accept-Ranges",
+			"Content-Range",
+		},
+		MaxAge: 12 * time.Hour,
+	}
+
+	return cors.New(config)
+}
+
+func corsAllowedOrigins() []string {
+	rawOrigins := os.Getenv("CORS_ALLOWED_ORIGINS")
+	if rawOrigins == "" {
+		return []string{"http://localhost:5173"}
+	}
+
+	origins := strings.Split(rawOrigins, ",")
+	result := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			result = append(result, strings.TrimRight(origin, "/"))
+		}
+	}
+
+	if len(result) == 0 {
+		return []string{"http://localhost:5173"}
+	}
+
+	return result
 }
 
 func sentryMiddleware() gin.HandlerFunc {

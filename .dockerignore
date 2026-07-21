@@ -4,8 +4,11 @@
 .cache/
 .gocache/
 .gomodcache/
+.npm-cache/
+node_modules/
 bin/*
 !bin/run.sh
 coverage.out
 .env
 .scannerwork/
+dist/

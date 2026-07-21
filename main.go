@@ -1,29 +1,41 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	_ = godotenv.Load()
+
 	flushSentry := initSentry()
 	defer flushSentry()
 
-	router := setupRouter()
+	store, closeStore, err := openStore()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer closeStore()
+
+	router := setupRouter(store, appBaseURL())
 
 	if err := router.Run(serverAddress()); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func setupRouter() *gin.Engine {
+func setupRouter(store linkStore, baseURL string) *gin.Engine {
 	router := gin.New()
 
 	router.Use(gin.Logger())
@@ -36,11 +48,52 @@ func setupRouter() *gin.Engine {
 		context.String(http.StatusOK, "pong")
 	})
 
+	links := newLinkHandler(store, baseURL)
+	router.GET("/r/:shortName", links.redirectLink)
+
+	api := router.Group("/api")
+	api.GET("/links", links.listLinks)
+	api.POST("/links", links.createLink)
+	api.GET("/links/:id", links.getLink)
+	api.PUT("/links/:id", links.updateLink)
+	api.DELETE("/links/:id", links.deleteLink)
+
 	if os.Getenv("ENABLE_SENTRY_TEST_ENDPOINT") == "true" {
 		router.GET("/debug/sentry", captureTestError)
 	}
 
 	return router
+}
+
+func openStore() (linkStore, func(), error) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Println("DATABASE_URL is empty; using in-memory storage")
+
+		return newMemoryStore(), func() {}, nil
+	}
+
+	database, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := database.PingContext(ctx); err != nil {
+		_ = database.Close()
+
+		return nil, nil, err
+	}
+
+	store := newPostgresStore(database)
+
+	return store, func() {
+		if err := store.Close(); err != nil {
+			log.Printf("could not close database: %v", err)
+		}
+	}, nil
 }
 
 func initSentry() func() {
@@ -71,6 +124,10 @@ func serverAddress() string {
 	}
 
 	return ":" + port
+}
+
+func appBaseURL() string {
+	return strings.TrimRight(os.Getenv("BASE_URL"), "/")
 }
 
 func sentryMiddleware() gin.HandlerFunc {

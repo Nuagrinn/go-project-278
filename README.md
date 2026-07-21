@@ -10,6 +10,7 @@ The application is prepared for Docker deployment on Render. Configure these env
 
 ```bash
 PORT=8080
+BASE_URL=<public service url>
 DATABASE_URL=<postgres connection string>
 SENTRY_DSN=<sentry project dsn>
 ```

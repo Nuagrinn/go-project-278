@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -126,6 +127,11 @@ func serverAddress() string {
 	}
 	if port == "" {
 		port = "8080"
+	}
+
+	host := os.Getenv("BACKEND_HOST")
+	if host != "" {
+		return net.JoinHostPort(host, port)
 	}
 
 	return ":" + port

@@ -8,6 +8,7 @@ goose -dir ./db/migrations postgres "${DATABASE_URL}" up
 
 echo "[run.sh] Starting Go app"
 export BACKEND_PORT="${BACKEND_PORT:-8081}"
+export BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 /app/bin/app &
 app_pid="$!"
 
